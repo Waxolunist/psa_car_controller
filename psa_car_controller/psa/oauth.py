@@ -40,6 +40,7 @@ class OpenIdCredentialManager(CredentialManager):
         self.refresh_callbacks = []
         self.code_verifier = None
         self.redirect_uri = None
+        self.last_refresh_error: Optional[Exception] = None
 
     def _grant_password_request_realm(self, login: str, password: str, realm: str) -> dict:
         return {"grant_type": 'password', "username": login, "scope": ' '.join(self.service_information.scopes),
@@ -75,15 +76,20 @@ class OpenIdCredentialManager(CredentialManager):
 
     @rate_limit(6, 1800)
     def refresh_token_now(self):
+        self.last_refresh_error = None
         try:
             self._refresh_token()
             for refresh_callback in self.refresh_callbacks:
                 refresh_callback()
             return True
         except OAuthError as e:
+            # the refresh token is rejected, only a new authentication can fix it
+            self.last_refresh_error = e
             logger.error("Can't refresh token: %s", e)
         except RequestException as e:
-            logger.error("Can't refresh token: %s", e)
+            # the server is unreachable, the token itself might still be fine
+            self.last_refresh_error = e
+            logger.error("Can't reach the PSA server to refresh the token: %s", e)
         return False
 
     def request(self, method, url, **kwargs):  # pylint: disable=W0221
