@@ -3,6 +3,7 @@ import logging
 import threading
 from datetime import datetime
 from os import environ
+from typing import Optional
 import time
 
 import paho.mqtt.client as mqtt
@@ -10,6 +11,7 @@ from requests import RequestException
 
 from psa_car_controller.psacc.model.car import Cars
 from psa_car_controller.psa.AccountInformation import AccountInformation
+from psa_car_controller.psa.connected_car_api.models.doors_state import DoorsState
 from psa_car_controller.psa.RemoteCredentials import RemoteCredentials
 from psa_car_controller.psa.constants import INPROGRESS, DEFAULT_PRECONDITIONING_PROGRAM, IMMEDIATE_CHARGE, \
     DELAYED_CHARGE, REMOTE_URL
@@ -20,10 +22,19 @@ from psa_car_controller.psa.otp.otp import ConfigException, save_otp, load_otp
 
 logger = logging.getLogger(__name__)
 
+# mqtt reports the lock state as an int, unlike the rest api's DoorsState.lockedState enum.
+# Only these two values have been observed on a real car (an Opel Mokka Electric, confirmed
+# against the /Doors command responses).
+MQTT_DOORS_LOCKING_STATE = {1: "Locked", 3: "Unlocked"}
 MQTT_SERVER = "mwa.mpsa.com"
 MQTT_RESP_TOPIC = "psa/RemoteServices/to/cid/"
 MQTT_EVENT_TOPIC = "psa/RemoteServices/events/MPHRTServices/"
 MQTT_TOKEN_TTL = 890
+# minimum delay between two remote token refresh attempts: the broker closes the socket without
+# CONNACK when the access token is expired, and paho reconnects at least every
+# MAX_REFRESH_DELAY seconds, so refreshing on every disconnect would burn the
+# refresh_token_now() rate limit (6 per 30 min) during a mere network outage.
+MAX_REFRESH_DELAY = 120
 
 
 class RemoteException(Exception):
@@ -38,6 +49,7 @@ class RemoteClient:
         self.remoteCredentials: RemoteCredentials = remoteCredentials
         self.manager = manager
         self.precond_programs = {}
+        self.lock_state = {}
         self.account_info = account_info
         self.headers = {
             "x-introspect-realm": self.account_info.realm,
@@ -49,6 +61,7 @@ class RemoteClient:
         self.otp = None
         self._lock = threading.Lock()
         self.update_thread: threading.Timer = None
+        self.remote_token_last_update: Optional[datetime] = None
 
     def __on_mqtt_connect(self, client, userdata, result_code, _):  # pylint: disable=unused-argument
         logger.info("Connected with result code %s", result_code)
@@ -63,6 +76,11 @@ class RemoteClient:
         # the client reconnects on its own, so report the reason on a single line
         logger.warning("MQTT disconnected (%d): %s", result_code, mqtt.error_string(result_code))
         if result_code == 1:
+            self._refresh_remote_token(force=True)
+        elif result_code == 7:
+            # the broker closes the socket without CONNACK when the access token is expired:
+            # paho then retries forever with the same stale token unless it is refreshed here.
+            # Throttling is handled inside _refresh_remote_token.
             self._refresh_remote_token(force=True)
 
     def _on_mqtt_message(self, client, userdata, msg):  # pylint: disable=unused-argument
@@ -89,9 +107,45 @@ class RemoteClient:
                 programs = data["precond_state"].get("programs", None)
                 if programs:
                     self.precond_programs[data["vin"]] = data["precond_state"]["programs"]
+                self._store_lock_state(data)
             self._fix_not_updated_api(charge_info, data["vin"])
         except KeyError:
             logger.exception("on_mqtt_message:")
+
+    def _store_lock_state(self, data):
+        # doors_state can be absent or explicitly null depending on the event
+        locking_state = (data.get("doors_state") or {}).get("doors_locking_state")
+        if locking_state is None:
+            return
+        lock_state = self._decode_lock_state(locking_state)
+        if lock_state is None:
+            return
+        vin = data["vin"]
+        self.lock_state[vin] = lock_state
+        self.apply_lock_state(self.vehicles_list.get_car_by_vin(vin))
+
+    @staticmethod
+    def _decode_lock_state(locking_state):
+        lock_state = MQTT_DOORS_LOCKING_STATE.get(locking_state)
+        if lock_state is None:
+            logger.warning("unknown doors_locking_state %s, please report it on github", locking_state)
+        return lock_state
+
+    def apply_lock_state(self, car):
+        """Overwrite car.status's doors lock state with the last one seen on mqtt.
+
+        mqtt pushes changes live; the rest api is polled every ~2 min and on some cars never
+        reports lockedState at all, so mqtt takes precedence whenever we have a value for it.
+        """
+        if car is None or car.status is None:
+            return
+        lock_state = self.lock_state.get(car.vin)
+        if lock_state is None:
+            return
+        if car.status.doors_state is None:
+            car.status.doors_state = DoorsState()
+        car.status.doors_state.locked_state = [lock_state]
+        logger.debug("lock state of %s set from mqtt: %s", car.vin, lock_state)
 
     def _fix_not_updated_api(self, charge_info, vin):
         if charge_info is not None and (charge_info.get('remaining_time', 0) != 0 or charge_info.get('rate', 0) != 0):
@@ -171,6 +225,17 @@ class RemoteClient:
             if not force and not bad_remote_token and self.remoteCredentials.last_update:
                 last_update: datetime = self.remoteCredentials.last_update
                 if (datetime.now() - last_update).total_seconds() < MQTT_TOKEN_TTL:
+                    return True
+            if force and self.remote_token_last_update is not None:
+                # throttle forced refreshes (e.g. one per paho reconnect attempt on rc 7):
+                # a stale token makes the broker drop the socket, and paho retries at most every
+                # MAX_REFRESH_DELAY seconds, so refreshing more often than that is either
+                # useless (network outage: the token isn't the problem) or harmful
+                # (it burns the refresh_token_now() rate limit: 6 per 30 min).
+                since_last_refresh = (datetime.now() - self.remote_token_last_update).total_seconds()
+                if since_last_refresh < MAX_REFRESH_DELAY:
+                    logger.debug("remote token refreshed %.0fs ago, skipping forced refresh",
+                                 since_last_refresh)
                     return True
             try:
                 if not self.manager.refresh_token_now():

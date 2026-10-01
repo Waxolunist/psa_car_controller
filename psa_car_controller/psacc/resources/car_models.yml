@@ -20,6 +20,13 @@
   reg: VR3KCZKZ2R 
   max_elec_consumption: 70
 - !ElecModel
+  name: E-5008 73 kWh GT
+  battery_power: 73
+  fuel_capacity: 0
+  abrp_name: peugeot:e5008:25:77
+  reg: VR3KCZKZXS 
+  max_elec_consumption: 70
+- !ElecModel
   name: e-5008
   battery_power: 73
   fuel_capacity: 0
@@ -346,6 +353,14 @@
   fuel_capacity: 45
   abrp_name:
   reg: VR3F4DGZ 
+  max_elec_consumption: 70
+  max_fuel_consumption: 30
+- !CarModel
+  name: 508 SW II Hybrid 180CV
+  battery_power: 12.4
+  fuel_capacity: 43
+  abrp_name:
+  reg: VR3F4DGL1R 
   max_elec_consumption: 70
   max_fuel_consumption: 30
 - !CarModel
@@ -1100,3 +1115,10 @@
   reg: VXKKCZKZ6T
   max_elec_consumption: 70
   max_fuel_consumption: 0
+- !ElecModel
+  name: Mokka-e 2024+
+  battery_power: 51
+  fuel_capacity: 0
+  abrp_name:
+  reg: VXKUKZKW0S
+  max_elec_consumption: 70
