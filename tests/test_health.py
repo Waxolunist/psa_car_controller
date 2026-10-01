@@ -27,7 +27,7 @@ def refuse(remote_client: RemoteClient, times: int):
 
 def connect(remote_client: RemoteClient):
     remote_client.mqtt_client.is_connected.return_value = True
-    remote_client._RemoteClient__on_mqtt_connect(MagicMock(), None, 0, None)
+    remote_client._RemoteClient__on_mqtt_connect(MagicMock(), None, {"session present": 0}, 0)
 
 
 class TestMqttAuthFailureCounter(unittest.TestCase):
@@ -53,7 +53,7 @@ class TestMqttAuthFailureCounter(unittest.TestCase):
         # paho calls on_connect with the CONNACK code before on_disconnect when it is refused
         remote_client = get_remote_client()
         refuse(remote_client, 3)
-        remote_client._RemoteClient__on_mqtt_connect(MagicMock(), None, 5, None)
+        remote_client._RemoteClient__on_mqtt_connect(MagicMock(), None, {"session present": 0}, 5)
         self.assertEqual(3, remote_client.mqtt_auth_failures)
         self.assertIsNone(remote_client.mqtt_last_connect)
 

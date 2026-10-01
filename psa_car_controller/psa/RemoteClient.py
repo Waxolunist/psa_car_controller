@@ -67,7 +67,7 @@ class RemoteClient:
         self.mqtt_auth_failures = 0
         self.mqtt_last_connect: Optional[datetime] = None
 
-    def __on_mqtt_connect(self, client, userdata, result_code, _):  # pylint: disable=unused-argument
+    def __on_mqtt_connect(self, client, userdata, flags, result_code):  # pylint: disable=unused-argument
         logger.info("Connected with result code %s", result_code)
         if result_code == 0:
             self.mqtt_auth_failures = 0
