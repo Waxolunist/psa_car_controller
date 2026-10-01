@@ -3,7 +3,8 @@ from typing import Optional, Tuple
 
 from psa_car_controller.psa.RemoteClient import RemoteClient
 
-# about 10 minutes at paho's 2 minutes reconnect delay
+# paho retries after 1, 2, 4, 8... s (max 120 s), so this is reached about 30 s after
+# the refusals start: how long until a restart is up to the healthcheck settings
 DEFAULT_MAX_MQTT_AUTH_FAILURES = 5
 
 
