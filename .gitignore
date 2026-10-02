@@ -158,3 +158,6 @@ tests/data/test_car.json
 tests/mypeugeot.apk
 tests/mypeugeot.apk.bz2
 tests/test_charge_control.json
+# local build of the home image (scripts/home-image.sh)
+*.apk.bz2
+test_charge_control.json
