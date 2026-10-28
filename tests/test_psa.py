@@ -64,12 +64,12 @@ class TestUnit(unittest.TestCase):
 
 
 LOCK_EVENT = '{"date":"2026-08-30T22:35:44Z","precond_state":{},"charging_state":{"remaining_time":0,"rate":0},' \
-             '"vin":"VXKUKZKW0SW011711",' \
+             '"vin":"VXKUKZKW0S0000000",' \
              '"doors_state":{"doors_opening_state":[0,0,0,0,0,0,0],"doors_locking_state":%s}}'
 
 
 class TestMqttLockState(unittest.TestCase):
-    VIN = "VXKUKZKW0SW011711"
+    VIN = "VXKUKZKW0S0000000"
 
     def setUp(self):
         self.remote_client = get_rc()
