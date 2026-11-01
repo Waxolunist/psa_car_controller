@@ -10,7 +10,7 @@ import unittest
 
 from paho.mqtt.client import MQTTMessage
 
-from psa_car_controller.psa.RemoteClient import MQTT_EVENT_TOPIC
+from psa_car_controller.psa.RemoteClient import MQTT_EVENT_TOPIC, MQTT_RESP_TOPIC
 from tests.utils import get_rc
 
 message_without_precond = b'{"date":"2022-03-30T12:00:52Z","etat_res_elec":0,"precond_state":{},"charging_state":{"program":{' \
@@ -117,3 +117,30 @@ class TestMqttLockState(unittest.TestCase):
         self.car.status.doors_state = DoorsState(locked_state=["Locked"])
         self._send_event(3)
         self.assertEqual(["Unlocked"], self.car.status.doors_state.locked_state)
+
+
+class TestMqttErrorLevel(unittest.TestCase):
+    def _send_response(self, request_topic, payload):
+        remote_client = get_rc()
+        msg = MQTTMessage(topic=(MQTT_RESP_TOPIC + "AP-0000" + request_topic).encode("utf-8"))
+        msg.payload = payload
+        with self.assertLogs("psa_car_controller.psa.RemoteClient", level="WARNING") as logs:
+            remote_client._on_mqtt_message(None, None, msg)
+        return logs.records
+
+    def test_failed_wakeup_is_a_warning(self):
+        records = self._send_response("/VehCharge/state",
+                                      b'{"vin":"vin","return_code":"300","reason":"[Vehicle.request.time.out]"}')
+        self.assertEqual(["WARNING"], [r.levelname for r in records])
+        self.assertIn("[Vehicle.request.time.out]", records[0].getMessage())
+
+    def test_failed_wakeup_without_reason_shows_resp_data(self):
+        records = self._send_response("/VehCharge/state",
+                                      b'{"vin":"vin","return_code":"500","resp_data":{"error":4}}')
+        self.assertEqual(["WARNING"], [r.levelname for r in records])
+        self.assertIn("'error': 4", records[0].getMessage())
+
+    def test_failed_command_stays_an_error(self):
+        records = self._send_response("/ThermalPrecond",
+                                      b'{"vin":"vin","return_code":"110","reason":"[vin must match]"}')
+        self.assertEqual(["ERROR"], [r.levelname for r in records])

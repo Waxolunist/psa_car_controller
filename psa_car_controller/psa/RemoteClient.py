@@ -29,6 +29,7 @@ MQTT_DOORS_LOCKING_STATE = {1: "Locked", 3: "Unlocked"}
 MQTT_SERVER = "mwa.mpsa.com"
 MQTT_RESP_TOPIC = "psa/RemoteServices/to/cid/"
 MQTT_EVENT_TOPIC = "psa/RemoteServices/events/MPHRTServices/"
+WAKEUP_TOPIC = "/VehCharge/state"
 MQTT_TOKEN_TTL = 890
 # minimum delay between two remote token refresh attempts: the broker closes the socket without
 # CONNACK when the access token is expired, and paho reconnects at least every
@@ -128,7 +129,10 @@ class RemoteClient:
                     else:
                         logger.error("Last request might have been send twice without success")
                 elif data["return_code"] != "0":
-                    logger.error('mqtt error %s : %s', data["return_code"], data.get("reason", "?"))
+                    # a failed wakeup only means the car didn't send its state this time
+                    level = logging.WARNING if msg.topic.endswith(WAKEUP_TOPIC) else logging.ERROR
+                    logger.log(level, 'mqtt error %s : %s', data["return_code"],
+                               data.get("reason", data.get("resp_data", "?")))
             elif msg.topic.startswith(MQTT_EVENT_TOPIC):
                 charge_info = data["charging_state"]
                 programs = data["precond_state"].get("programs", None)
@@ -373,7 +377,7 @@ class RemoteClient:
     @rate_limit(6, 60 * 20)
     def wakeup(self, vin):
         logger.info("ask wakeup to %s", vin)
-        msg = self.mqtt_request(vin, {"action": "state"}, "/VehCharge/state")
+        msg = self.mqtt_request(vin, {"action": "state"}, WAKEUP_TOPIC)
         logger.info(msg)
         self.publish(msg)
         return True
