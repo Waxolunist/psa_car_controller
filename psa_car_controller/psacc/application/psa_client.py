@@ -112,7 +112,7 @@ class PSAClient:
     def get_vehicle_info(self, vin, cache=False):
         res = None
         car = self.vehicles_list.get_car_by_vin(vin)
-        if cache and car.status is not None:
+        if cache:
             res = car.status
         else:
             for _ in range(0, 2):
