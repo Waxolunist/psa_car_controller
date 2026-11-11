@@ -83,8 +83,10 @@ def get_vehicle_info(vin):
         # Every attempt failed upstream; say so rather than raising AttributeError.
         logger.warning("get_vehicle_info returned no data for %s", vin)
         return jsonify({"error": "no_data", "message": "No vehicle info available from the API"}), 502
+    body = info.to_dict()
+    body["mqtt_charging_state"] = APP.myp.remote_client.get_charge_state(vin)
     response = app.response_class(
-        response=json.dumps(info.to_dict(), default=str),
+        response=json.dumps(body, default=str),
         status=200,
         mimetype='application/json'
     )

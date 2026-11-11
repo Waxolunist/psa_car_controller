@@ -49,6 +49,8 @@ class TestChargeControl(unittest.TestCase):
             return expectations["stopped_charge"] and expectations["postponed_charge"]
 
         class MockClient:
+            auto_wakeup = True
+
             def charge_now(self, vin, now):
                 logging.getLogger().info(f"charge_now({vin}, {now})")
                 state["charging"] = now

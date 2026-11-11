@@ -42,6 +42,9 @@ MAX_REFRESH_DELAY = 120
 # so it must run well within that lifetime: 8h keeps the chain rotating forever and
 # survives one missed cycle.
 KEEPALIVE_PERIOD = 3600 * 8
+# remaining_time the car sends in every event while no charge is running, at any SoC
+NO_CHARGE_REMAINING_TIME = 635
+CHARGE_STATE_FIELDS = ("soc_batt", "rate", "remaining_time", "hmi_state", "autonomy_zev", "mode")
 # the SMS endpoint regularly takes longer than the default timeout to answer
 SMS_TIMEOUT_IN_S = 20
 
@@ -68,6 +71,8 @@ class RemoteClient:
         self.manager = manager
         self.precond_programs = {}
         self.lock_state = {}
+        self.charge_states = {}
+        self.auto_wakeup = environ.get("PSACC_AUTO_WAKEUP", "1") == "1"
         self.account_info = account_info
         self.headers = {
             "x-introspect-realm": self.account_info.realm,
@@ -135,6 +140,7 @@ class RemoteClient:
                                data.get("reason", data.get("resp_data", "?")))
             elif msg.topic.startswith(MQTT_EVENT_TOPIC):
                 charge_info = data["charging_state"]
+                self._store_charge_state(data)
                 programs = data["precond_state"].get("programs", None)
                 if programs:
                     self.precond_programs[data["vin"]] = data["precond_state"]["programs"]
@@ -178,8 +184,33 @@ class RemoteClient:
         car.status.doors_state.locked_state = [lock_state]
         logger.debug("lock state of %s set from mqtt: %s", car.vin, lock_state)
 
+    def _store_charge_state(self, data):
+        charge_info = data.get("charging_state")
+        date = data.get("date")
+        if not charge_info or not date:
+            return
+        vin = data["vin"]
+        stored = self.charge_states.get(vin)
+        if stored is not None and stored["date"] >= date:
+            return
+        state = {key: charge_info.get(key) for key in CHARGE_STATE_FIELDS}
+        state["date"] = date
+        self.charge_states[vin] = state
+
+    def get_charge_state(self, vin) -> Optional[dict]:
+        return self.charge_states.get(vin)
+
+    @staticmethod
+    def is_charging(charge_info) -> bool:
+        if charge_info is None:
+            return False
+        remaining_time = charge_info.get('remaining_time') or 0
+        return (charge_info.get('rate') or 0) > 0 or remaining_time not in (0, NO_CHARGE_REMAINING_TIME)
+
     def _fix_not_updated_api(self, charge_info, vin):
-        if charge_info is not None and (charge_info.get('remaining_time', 0) != 0 or charge_info.get('rate', 0) != 0):
+        if not self.auto_wakeup:
+            return
+        if self.is_charging(charge_info):
             try:
                 car = self.vehicles_list.get_car_by_vin(vin=vin)
                 if car and car.status.get_energy('Electric').charging.status != INPROGRESS:
@@ -227,7 +258,10 @@ class RemoteClient:
     def __keep_mqtt(self):  # avoid token expiration
         if len(self.vehicles_list) > 0:
             try:
-                self.wakeup(self.vehicles_list[0].vin)
+                if self.auto_wakeup:
+                    self.wakeup(self.vehicles_list[0].vin)
+                else:
+                    self._refresh_remote_token()
             except Exception:
                 logger.exception("__keep_mqtt")
         self.update_thread = threading.Timer(KEEPALIVE_PERIOD, self.__keep_mqtt)
