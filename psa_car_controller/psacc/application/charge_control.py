@@ -56,6 +56,8 @@ class ChargeControl:
         return True
 
     def force_update(self, vehicle_status):
+        if not self.psacc.remote_client.auto_wakeup:
+            return
         charging_mode = vehicle_status.get_energy('Electric').charging.charging_mode
         quick_refresh = isinstance(charging_mode, str) and charging_mode == "Quick"
 

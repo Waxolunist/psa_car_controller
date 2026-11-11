@@ -30,6 +30,7 @@ def get_health(remote_client: Optional[RemoteClient], remote_control: bool,
         "mqtt_connected": remote_client.is_mqtt_connected(),
         "consecutive_auth_failures": remote_client.mqtt_auth_failures,
         "last_connect": last_connect.isoformat() if last_connect else None,
+        "auto_wakeup": remote_client.auto_wakeup,
     }
     status = 503 if remote_client.mqtt_auth_failures >= max_auth_failures else 200
     return body, status
