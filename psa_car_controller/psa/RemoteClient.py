@@ -416,6 +416,12 @@ class RemoteClient:
         self.publish(msg)
         return True
 
+    def wakeup_unless_rate_limited(self, vin):
+        try:
+            self.wakeup(vin)
+        except RateLimitException:
+            logger.warning("Wakeup rate limit exceeded, sending the command to %s without a wakeup", vin)
+
     def lock_door(self, vin, lock: bool):
         if lock:
             value = "lock"
@@ -427,7 +433,9 @@ class RemoteClient:
         self.publish(msg)
         return True
 
-    def preconditioning(self, vin, activate: bool):
+    def preconditioning(self, vin, activate: bool, wakeup: bool = False):
+        if wakeup:
+            self.wakeup_unless_rate_limited(vin)
         if activate:
             value = "activate"
         else:

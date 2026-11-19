@@ -33,6 +33,9 @@ These links will work only if PSACC is on your computer, if it isn't please repl
 
    http://localhost:5000/preconditioning/YOURVIN/1 or 0
 
+   Add `?wakeup=1` to wake the car up first. If the wakeup rate limit is reached,
+   the preconditioning command is still sent, without the wakeup.
+
 9. Change charge hour (for example: set it to 22h30)
 
    http://localhost:5000/charge_hour?vin=YOURVIN&hour=22&minute=30
