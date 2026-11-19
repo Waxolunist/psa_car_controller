@@ -127,7 +127,8 @@ def wakeup(vin):
 
 @app.route('/preconditioning/<string:vin>/<int:activate>')
 def preconditioning(vin, activate):
-    return jsonify(APP.myp.remote_client.preconditioning(vin, activate))
+    wakeup = request.args.get('wakeup', '0') == '1'
+    return jsonify(APP.myp.remote_client.preconditioning(vin, activate, wakeup))
 
 
 @app.route('/position/<string:vin>')
